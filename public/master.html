@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>기초코드 관리</title>
+<link rel="stylesheet" href="/css/common.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>기초코드 관리</h1>
+      <div class="sub">은행 · 고객 마스터 데이터 등록/삭제</div>
+    </div>
+  </header>
+
+  <div class="master-grid">
+    <div class="panel">
+      <h2>은행 관리</h2>
+      <div class="inline-add">
+        <input id="bankNameInput" placeholder="신규 은행명 입력 (예: OO은행)">
+        <button class="btn-primary" id="bankAddBtn">추가</button>
+      </div>
+      <table>
+        <thead><tr><th>은행명</th><th style="width:80px;"></th></tr></thead>
+        <tbody id="bankTbody"></tbody>
+      </table>
+      <div id="bankEmpty" class="empty" style="display:none;">등록된 은행이 없습니다.</div>
+    </div>
+
+    <div class="panel">
+      <h2>고객 관리</h2>
+      <div class="inline-add">
+        <input id="custNameInput" placeholder="신규 고객명 입력 (예: 홍길동)">
+        <button class="btn-primary" id="custAddBtn">추가</button>
+      </div>
+      <table>
+        <thead><tr><th>고객명</th><th style="width:80px;"></th></tr></thead>
+        <tbody id="custTbody"></tbody>
+      </table>
+      <div id="custEmpty" class="empty" style="display:none;">등록된 고객이 없습니다.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <p style="font-size:12.5px;color:var(--muted);margin:0;">
+      ※ "예치 데이터 등록/관리" 화면에서 새로운 고객명을 직접 입력해서 등록하면, 여기에도 자동으로 추가됩니다 (양방향 동기화).<br>
+      ※ 이미 예치 데이터에서 사용 중인 은행/고객은 삭제할 수 없습니다. 먼저 해당 데이터를 정리한 후 삭제해주세요.
+    </p>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+renderGNB('master');
+
+async function loadBanks(){
+  const res = await fetch('/api/banks');
+  const banks = await res.json();
+  const tbody = document.getElementById('bankTbody');
+  document.getElementById('bankEmpty').style.display = banks.length ? 'none' : 'block';
+  tbody.innerHTML = banks.map(b => `
+    <tr>
+      <td>${b.name}</td>
+      <td class="row-actions"><a class="del" onclick="delBank('${b.id}','${b.name}')">삭제</a></td>
+    </tr>
+  `).join('');
+}
+
+async function loadCustomers(){
+  const res = await fetch('/api/customers');
+  const customers = await res.json();
+  const tbody = document.getElementById('custTbody');
+  document.getElementById('custEmpty').style.display = customers.length ? 'none' : 'block';
+  tbody.innerHTML = customers.map(c => `
+    <tr>
+      <td>${c.name}</td>
+      <td class="row-actions"><a class="del" onclick="delCustomer('${c.id}','${c.name}')">삭제</a></td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('bankAddBtn').addEventListener('click', async ()=>{
+  const input = document.getElementById('bankNameInput');
+  const name = input.value.trim();
+  if(!name){ showToast('은행명을 입력해주세요.'); return; }
+  const res = await fetch('/api/banks', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+  const data = await res.json();
+  if(!res.ok){ showToast(data.error || '추가 중 오류가 발생했습니다.'); return; }
+  input.value = '';
+  showToast('은행이 추가되었습니다.');
+  loadBanks();
+});
+
+document.getElementById('custAddBtn').addEventListener('click', async ()=>{
+  const input = document.getElementById('custNameInput');
+  const name = input.value.trim();
+  if(!name){ showToast('고객명을 입력해주세요.'); return; }
+  const res = await fetch('/api/customers', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+  const data = await res.json();
+  if(!res.ok){ showToast(data.error || '추가 중 오류가 발생했습니다.'); return; }
+  input.value = '';
+  showToast('고객이 추가되었습니다.');
+  loadCustomers();
+});
+
+async function delBank(id, name){
+  if(!confirm(`"${name}" 은행을 삭제하시겠습니까?`)) return;
+  const res = await fetch('/api/banks/' + id, { method:'DELETE' });
+  const data = await res.json();
+  if(!res.ok){ showToast(data.error || '삭제 중 오류가 발생했습니다.'); return; }
+  showToast('삭제되었습니다.');
+  loadBanks();
+}
+
+async function delCustomer(id, name){
+  if(!confirm(`"${name}" 고객을 삭제하시겠습니까?`)) return;
+  const res = await fetch('/api/customers/' + id, { method:'DELETE' });
+  const data = await res.json();
+  if(!res.ok){ showToast(data.error || '삭제 중 오류가 발생했습니다.'); return; }
+  showToast('삭제되었습니다.');
+  loadCustomers();
+}
+
+loadBanks();
+loadCustomers();
+</script>
+</body>
+</html>

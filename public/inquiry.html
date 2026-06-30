@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>조회 현황</title>
+<link rel="stylesheet" href="/css/common.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>조회 현황</h1>
+      <div class="sub">예치 데이터 조회 · 만기 이자 계산</div>
+    </div>
+    <div class="summary">
+      <div>건수<b id="sumCount">0</b></div>
+      <div>총 예치금액<b id="sumAmt">0원</b></div>
+      <div>30일 내 만기<b id="sumSoon">0건</b></div>
+      <div>만기 예상 이자<b id="sumInterest">0원</b></div>
+      <div>만기 예상 수령액<b id="sumMaturity">0원</b></div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2>조회 조건</h2>
+    <div class="grid-form" id="queryForm">
+      <div class="field"><label>고객명</label><input id="q_customer" placeholder="예: 홍길동"></div>
+      <div class="field"><label>은행종류</label><select id="q_bank"><option value="">전체</option></select></div>
+      <div class="field"><label>예치일 시작</label><input id="q_start_from" type="date"></div>
+      <div class="field"><label>예치일 종료</label><input id="q_start_to" type="date"></div>
+      <div class="field"><label>만기일 시작</label><input id="q_end_from" type="date"></div>
+      <div class="field"><label>만기일 종료</label><input id="q_end_to" type="date"></div>
+      <div class="field"><label>금액 이상</label><input id="q_amt_min" type="number" placeholder="원"></div>
+      <div class="field"><label>금액 이하</label><input id="q_amt_max" type="number" placeholder="원"></div>
+      <div class="field"><label>정렬</label>
+        <select id="sortSel">
+          <option value="end_asc">만기일 빠른순</option>
+          <option value="end_desc">만기일 늦은순</option>
+          <option value="amt_desc">금액 큰순</option>
+          <option value="amt_asc">금액 작은순</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" id="queryBtn">조회</button>
+        <button class="btn-ghost" id="resetQueryBtn">초기화</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>목록 <span id="resultCount" style="color:var(--muted);font-weight:400;font-size:12px;"></span></h2>
+    <table>
+      <thead>
+        <tr>
+          <th>고객명</th><th>은행종류</th><th>예금명</th>
+          <th style="text-align:right;">금액</th><th>예치일</th><th>만기일</th>
+          <th style="text-align:right;">이율</th>
+          <th style="text-align:right;">만기 예상이자</th>
+          <th style="text-align:right;">만기 수령액</th>
+          <th>상태</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="emptyMsg" class="empty" style="display:none;">조회 조건에 맞는 내역이 없습니다.</div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+renderGNB('inquiry');
+
+let records = [];
+
+const todayStr = () => new Date().toISOString().slice(0,10);
+const daysUntil = d => Math.ceil((new Date(d) - new Date(todayStr())) / 86400000);
+function depositDays(start, end){ return Math.max(0, Math.round((new Date(end) - new Date(start)) / 86400000)); }
+function calcInterest(r){
+  if(r.rate == null || r.rate === '') return 0;
+  const days = depositDays(r.start, r.end);
+  return Math.round(r.amount * (r.rate/100) * (days/365));
+}
+function calcMaturityAmount(r){ return r.amount + calcInterest(r); }
+function statusBadge(end){
+  const d = daysUntil(end);
+  if(d < 0) return '<span class="badge over">만기경과</span>';
+  if(d <= 30) return `<span class="badge soon">D-${d}</span>`;
+  return '<span class="badge ok">정상</span>';
+}
+
+async function loadAll(){
+  const [depRes, bankRes] = await Promise.all([fetch('/api/deposits'), fetch('/api/banks')]);
+  records = await depRes.json();
+  const banks = await bankRes.json();
+  const sel = document.getElementById('q_bank');
+  sel.innerHTML = '<option value="">전체</option>' + banks.map(b=>`<option value="${b.name}">${b.name}</option>`).join('');
+  render();
+}
+
+function render(){
+  const customer = document.getElementById('q_customer').value.trim().toLowerCase();
+  const bankF = document.getElementById('q_bank').value;
+  const startFrom = document.getElementById('q_start_from').value;
+  const startTo = document.getElementById('q_start_to').value;
+  const endFrom = document.getElementById('q_end_from').value;
+  const endTo = document.getElementById('q_end_to').value;
+  const amtMin = document.getElementById('q_amt_min').value;
+  const amtMax = document.getElementById('q_amt_max').value;
+  const sortV = document.getElementById('sortSel').value;
+
+  let list = records.filter(r=>{
+    if(customer && !r.customer.toLowerCase().includes(customer)) return false;
+    if(bankF && r.bank !== bankF) return false;
+    if(startFrom && r.start < startFrom) return false;
+    if(startTo && r.start > startTo) return false;
+    if(endFrom && r.end < endFrom) return false;
+    if(endTo && r.end > endTo) return false;
+    if(amtMin && r.amount < Number(amtMin)) return false;
+    if(amtMax && r.amount > Number(amtMax)) return false;
+    return true;
+  });
+
+  list.sort((a,b)=>{
+    if(sortV==='end_asc') return new Date(a.end) - new Date(b.end);
+    if(sortV==='end_desc') return new Date(b.end) - new Date(a.end);
+    if(sortV==='amt_desc') return b.amount - a.amount;
+    if(sortV==='amt_asc') return a.amount - b.amount;
+  });
+
+  const tbody = document.getElementById('tbody');
+  document.getElementById('emptyMsg').style.display = list.length ? 'none' : 'block';
+
+  tbody.innerHTML = list.map(r=>`
+    <tr>
+      <td>${r.customer}</td><td>${r.bank}</td><td>${r.product}</td>
+      <td class="amt">${fmtAmt(r.amount)}</td><td>${r.start}</td><td>${r.end}</td>
+      <td class="amt">${r.rate!=null ? r.rate+'%' : '-'}</td>
+      <td class="amt">${r.rate!=null ? fmtAmt(calcInterest(r)) : '-'}</td>
+      <td class="amt">${r.rate!=null ? fmtAmt(calcMaturityAmount(r)) : fmtAmt(r.amount)}</td>
+      <td>${statusBadge(r.end)}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('sumCount').textContent = records.length + '건';
+  document.getElementById('sumAmt').textContent = fmtAmt(records.reduce((s,r)=>s+r.amount,0));
+  document.getElementById('sumSoon').textContent = records.filter(r=>{ const d=daysUntil(r.end); return d>=0 && d<=30; }).length + '건';
+  document.getElementById('sumInterest').textContent = fmtAmt(records.reduce((s,r)=>s+calcInterest(r),0));
+  document.getElementById('sumMaturity').textContent = fmtAmt(records.reduce((s,r)=>s+calcMaturityAmount(r),0));
+  document.getElementById('resultCount').textContent = `(${list.length}건 조회됨 / 전체 ${records.length}건)`;
+}
+
+document.getElementById('queryBtn').addEventListener('click', render);
+document.getElementById('resetQueryBtn').addEventListener('click', ()=>{
+  ['q_customer','q_bank','q_start_from','q_start_to','q_end_from','q_end_to','q_amt_min','q_amt_max'].forEach(id=>{
+    document.getElementById(id).value = '';
+  });
+  render();
+});
+document.getElementById('queryForm').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); render(); } });
+document.getElementById('sortSel').addEventListener('change', render);
+
+loadAll();
+</script>
+</body>
+</html>
