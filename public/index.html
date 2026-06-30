@@ -134,6 +134,60 @@
   .toast.show{opacity:1;transform:translateY(0);}
   .footer-link{font-size:12px;color:var(--muted);}
   .footer-link a{color:var(--navy-2);text-decoration:underline;cursor:pointer;}
+
+  /* 엑셀 업/다운로드 패널 */
+  .excel-bar{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .btn-excel-dl{background:#1d6f42;color:#fff;}
+  .btn-excel-dl:hover{background:#155234;}
+  .btn-excel-tmpl{background:#e8f4ec;color:#1d6f42;border:1px solid #b2d4bc;}
+  .btn-excel-tmpl:hover{background:#d4ecdb;}
+  .btn-excel-ul{background:var(--accent);color:#fff;}
+  .btn-excel-ul:hover{background:#9a631f;}
+
+  .upload-area{
+    border:2px dashed var(--line);
+    border-radius:4px;
+    padding:20px;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+    cursor:pointer;
+    transition:border-color .2s;
+    margin-top:12px;
+    display:none;
+  }
+  .upload-area.active{border-color:var(--accent);color:var(--accent);}
+  .upload-area:hover{border-color:var(--navy-2);}
+
+  .error-box{
+    background:#fdf0f0;
+    border:1px solid #e8b4b4;
+    border-radius:4px;
+    padding:14px 16px;
+    margin-top:12px;
+    font-size:13px;
+    color:var(--danger);
+    display:none;
+  }
+  .error-box .err-row{margin-bottom:6px;}
+  .error-box .err-row strong{display:block;margin-bottom:2px;}
+  .error-box ul{margin:0;padding-left:16px;}
+
+  .success-box{
+    background:#f0faf3;
+    border:1px solid #a8d5b5;
+    border-radius:4px;
+    padding:12px 16px;
+    margin-top:12px;
+    font-size:13px;
+    color:#1d6f42;
+    display:none;
+  }
 </style>
 </head>
 <body>
@@ -174,6 +228,23 @@
         <button class="btn-ghost" id="cancelBtn" style="display:none;">취소</button>
       </div>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>엑셀 업로드 / 다운로드</h2>
+    <div class="excel-bar">
+      <button class="btn-excel-dl" id="excelDownBtn">⬇ 엑셀 다운로드</button>
+      <button class="btn-excel-tmpl" id="excelTmplBtn">📋 샘플 양식 받기</button>
+      <button class="btn-excel-ul" id="excelUpToggle">⬆ 엑셀 업로드</button>
+    </div>
+    <div class="upload-area" id="uploadArea">
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none;">
+      <div id="uploadPrompt">📂 엑셀 파일을 여기에 끌어다 놓거나, 클릭해서 선택하세요<br><span style="font-size:11px;margin-top:4px;display:block;">샘플 양식에 맞춰 작성된 .xlsx 파일만 업로드 가능합니다</span></div>
+      <div id="uploadFileInfo" style="display:none;"></div>
+      <button class="btn-primary" id="uploadSubmitBtn" style="margin-top:12px;display:none;">업로드 실행</button>
+    </div>
+    <div class="error-box" id="uploadErrorBox"></div>
+    <div class="success-box" id="uploadSuccessBox"></div>
   </div>
 
   <div class="panel">
@@ -433,6 +504,103 @@ document.getElementById('sortSel').addEventListener('change', render);
 document.getElementById('backupLink').addEventListener('click', ()=>{
   window.location.href = '/api/backup';
 });
+
+// ── 엑셀 업로드 / 다운로드 ──────────────────────────────
+document.getElementById('excelDownBtn').addEventListener('click', () => {
+  window.location.href = '/api/excel/download';
+});
+document.getElementById('excelTmplBtn').addEventListener('click', () => {
+  window.location.href = '/api/excel/template';
+});
+
+document.getElementById('excelUpToggle').addEventListener('click', () => {
+  const area = document.getElementById('uploadArea');
+  const isVisible = area.style.display === 'block';
+  area.style.display = isVisible ? 'none' : 'block';
+  if (isVisible) resetUploadUI();
+});
+
+const uploadArea  = document.getElementById('uploadArea');
+const fileInput   = document.getElementById('excelFileInput');
+let selectedFile  = null;
+
+uploadArea.addEventListener('click', (e) => {
+  if (e.target.id === 'uploadSubmitBtn') return;
+  fileInput.click();
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) selectFile(fileInput.files[0]);
+});
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('active'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('active'));
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault(); uploadArea.classList.remove('active');
+  if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+});
+
+function selectFile(file) {
+  if (!file.name.match(/\.(xlsx|xls)$/i)) {
+    showUploadError([{ row: null, messages: ['.xlsx 또는 .xls 파일만 업로드 가능합니다.'] }]);
+    return;
+  }
+  selectedFile = file;
+  document.getElementById('uploadPrompt').style.display = 'none';
+  document.getElementById('uploadFileInfo').style.display = 'block';
+  document.getElementById('uploadFileInfo').textContent = `📄 선택된 파일: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+  document.getElementById('uploadSubmitBtn').style.display = 'inline-block';
+  document.getElementById('uploadErrorBox').style.display = 'none';
+  document.getElementById('uploadSuccessBox').style.display = 'none';
+}
+
+document.getElementById('uploadSubmitBtn').addEventListener('click', async () => {
+  if (!selectedFile) return;
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  const btn = document.getElementById('uploadSubmitBtn');
+  btn.textContent = '업로드 중...'; btn.disabled = true;
+
+  try {
+    const res  = await fetch('/api/excel/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (res.status === 422 && data.errors) {
+      showUploadError(data.errors);
+    } else if (!res.ok) {
+      showUploadError([{ row: null, messages: [data.error || '업로드 중 오류가 발생했습니다.'] }]);
+    } else {
+      const box = document.getElementById('uploadSuccessBox');
+      box.textContent = `✅ ${data.count}건이 성공적으로 업로드되었습니다.`;
+      box.style.display = 'block';
+      document.getElementById('uploadErrorBox').style.display = 'none';
+      resetUploadUI(true);
+      await loadAll();
+    }
+  } catch (e) {
+    showUploadError([{ row: null, messages: ['서버와 통신 중 오류가 발생했습니다.'] }]);
+  } finally {
+    btn.textContent = '업로드 실행'; btn.disabled = false;
+  }
+});
+
+function showUploadError(errors) {
+  const box = document.getElementById('uploadErrorBox');
+  box.innerHTML = '<strong>⚠️ 아래 항목을 수정 후 다시 업로드해주세요</strong><br><br>' +
+    errors.map(e => {
+      const label = e.row ? `<strong>${e.row}행:</strong>` : '<strong>파일 오류:</strong>';
+      return `<div class="err-row">${label}<ul>${e.messages.map(m=>`<li>${m}</li>`).join('')}</ul></div>`;
+    }).join('');
+  box.style.display = 'block';
+  document.getElementById('uploadSuccessBox').style.display = 'none';
+}
+
+function resetUploadUI(keepSuccess = false) {
+  selectedFile = null; fileInput.value = '';
+  document.getElementById('uploadPrompt').style.display = 'block';
+  document.getElementById('uploadFileInfo').style.display = 'none';
+  document.getElementById('uploadFileInfo').textContent = '';
+  document.getElementById('uploadSubmitBtn').style.display = 'none';
+  document.getElementById('uploadErrorBox').style.display = 'none';
+  if (!keepSuccess) document.getElementById('uploadSuccessBox').style.display = 'none';
+}
 
 loadAll();
 </script>
