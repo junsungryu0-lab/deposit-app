@@ -1,12 +1,14 @@
 {
   "name": "deposit-manager",
   "version": "1.0.0",
-  "description": "예치 현황 관리 프로그램 (개인용 로컬 버전)",
+  "description": "예치 현황 관리 프로그램",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "multer": "^1.4.5",
+    "xlsx": "^0.18.5"
   }
 }
